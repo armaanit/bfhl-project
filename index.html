@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BFHL – System Analyzer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Sora:wght@300;500;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --primary-bg: #0d0f14;
+        --panel-bg: #151820;
+        --border-color: #232635;
+        --highlight: #5c6ef8;
+        --success: #38d9a9;
+        --text-main: #e4e6f0;
+        --text-dim: #6b7280;
+        --alert: #f87171;
+        --corner-radius: 10px;
+      }
+
+      body {
+        background: var(--primary-bg);
+        color: var(--text-main);
+        font-family: "Sora", sans-serif;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 40px 16px 80px;
+      }
+
+      header {
+        text-align: center;
+        margin-bottom: 40px;
+      }
+      header .status-indicator {
+        display: inline-block;
+        background: rgba(92, 110, 248, 0.15);
+        border: 1px solid rgba(92, 110, 248, 0.35);
+        color: var(--highlight);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.72rem;
+        letter-spacing: 0.12em;
+        padding: 4px 12px;
+        border-radius: 999px;
+        margin-bottom: 14px;
+      }
+      header h1 {
+        font-size: clamp(1.6rem, 4vw, 2.4rem);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        background: linear-gradient(135deg, #fff 30%, var(--highlight));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      header p {
+        color: var(--text-dim);
+        font-size: 0.9rem;
+        margin-top: 8px;
+        font-weight: 300;
+      }
+
+      .config-panel {
+        background: var(--panel-bg);
+        border: 1px solid var(--border-color);
+        border-radius: var(--corner-radius);
+        padding: 28px;
+        width: 100%;
+        max-width: 680px;
+        margin-bottom: 24px;
+      }
+      .field-heading {
+        font-size: 0.72rem;
+        letter-spacing: 0.1em;
+        color: var(--text-dim);
+        text-transform: uppercase;
+        margin-bottom: 10px;
+        font-family: "JetBrains Mono", monospace;
+      }
+
+      .data-terminal {
+        width: 100%;
+        background: var(--primary-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        color: var(--text-main);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.85rem;
+        padding: 14px;
+        resize: vertical;
+        min-height: 120px;
+        outline: none;
+        transition: border-color 0.2s;
+      }
+      .data-terminal:focus {
+        border-color: var(--highlight);
+      }
+
+      .input-field {
+        width: 100%;
+        background: var(--primary-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        color: var(--text-main);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.82rem;
+        padding: 10px 14px;
+        outline: none;
+        margin-top: 10px;
+      }
+
+      button.execute-action {
+        margin-top: 20px;
+        width: 100%;
+        padding: 14px;
+        border: none;
+        border-radius: 8px;
+        background: var(--highlight);
+        color: #fff;
+        font-family: "Sora", sans-serif;
+        font-weight: 600;
+        font-size: 1rem;
+        cursor: pointer;
+        transition:
+          opacity 0.2s,
+          transform 0.1s;
+      }
+
+      .notification-error {
+        background: rgba(248, 113, 113, 0.08);
+        border: 1px solid rgba(248, 113, 113, 0.3);
+        border-radius: 8px;
+        color: var(--alert);
+        padding: 14px 18px;
+        font-size: 0.85rem;
+        font-family: "JetBrains Mono", monospace;
+        display: none;
+        margin-top: 15px;
+      }
+      .notification-error.active {
+        display: block;
+      }
+
+      #output-container {
+        width: 100%;
+        max-width: 680px;
+      }
+
+      .identity-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+      .identity-block {
+        background: var(--panel-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 14px;
+      }
+      .identity-block .key {
+        font-size: 0.68rem;
+        color: var(--text-dim);
+        text-transform: uppercase;
+        margin-bottom: 4px;
+        font-family: "JetBrains Mono", monospace;
+      }
+      .identity-block .value {
+        font-size: 0.85rem;
+        font-weight: 600;
+        word-break: break-all;
+      }
+
+      .metric-row {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+      }
+      .metric-chip {
+        background: rgba(92, 110, 248, 0.12);
+        border: 1px solid rgba(92, 110, 248, 0.25);
+        border-radius: 999px;
+        padding: 6px 16px;
+        font-size: 0.8rem;
+        font-family: "JetBrains Mono", monospace;
+        color: var(--highlight);
+      }
+
+      .node-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 14px;
+        margin-bottom: 20px;
+      }
+      .node-card {
+        background: var(--panel-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        padding: 18px;
+      }
+      .node-card.warning {
+        border-color: rgba(248, 113, 113, 0.3);
+      }
+
+      .node-visual {
+        background: var(--primary-bg);
+        border-radius: 6px;
+        padding: 12px;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.78rem;
+        line-height: 1.6;
+        overflow-x: auto;
+        white-space: pre;
+        color: var(--success);
+      }
+
+      .label-chip {
+        background: var(--primary-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 4px 12px;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.78rem;
+      }
+
+      .loader-icon {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: rotate-loader 0.6s linear infinite;
+        vertical-align: middle;
+        margin-right: 8px;
+      }
+      @keyframes rotate-loader {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <header>
+      <div class="status-indicator">BFHL ANALYZER</div>
+      <h1>System Structure Map</h1>
+      <p>SRM Assessment RA2311030010264</p>
+    </header>
+
+    <div class="config-panel">
+      <div class="field-heading">Service Endpoint</div>
+      <input
+        type="text"
+        class="input-field"
+        id="serviceUrl"
+        placeholder="https://armaanit-bfhl.onrender.com"
+      />
+
+      <div class="field-heading" style="margin-top: 22px">Input Stream</div>
+      <textarea
+        class="data-terminal"
+        id="inputStream"
+        placeholder="A->B, B->C, X->Y, Y->X"
+      ></textarea>
+
+      <button
+        class="execute-action"
+        id="triggerBtn"
+        onclick="initiateAnalysis()"
+      >
+        Run Analysis Engine
+      </button>
+      <div class="notification-error" id="msgConsole"></div>
+    </div>
+
+    <div id="output-container"></div>
+
+    <script>
+      function extractPayload(inputString) {
+        return inputString
+          .split(/[\n,]+/)
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0);
+      }
+
+      function buildDiagramString(map, indentation, isTerminal) {
+        let output = [];
+        const keys = Object.keys(map);
+        keys.forEach((key, index) => {
+          const lastInSet = index === keys.length - 1;
+          const arm = lastInSet ? "└── " : "├── ";
+          output.push(indentation + arm + key);
+          const subIndent = indentation + (lastInSet ? "    " : "│   ");
+          output = output.concat(
+            buildDiagramString(map[key], subIndent, lastInSet),
+          );
+        });
+        return output;
+      }
+
+      function generateVisualMap(dataMap) {
+        const entryPoints = Object.keys(dataMap);
+        if (entryPoints.length === 0) return "";
+        const base = entryPoints[0];
+        const resultStack = [
+          base,
+          ...buildDiagramString(dataMap[base], "", true),
+        ];
+        return resultStack.join("\n");
+      }
+
+      function logError(text) {
+        const consoleEl = document.getElementById("msgConsole");
+        consoleEl.textContent = "FATAL: " + text;
+        consoleEl.classList.add("active");
+      }
+
+      async function initiateAnalysis() {
+        document.getElementById("msgConsole").classList.remove("active");
+        const endpoint = document
+          .getElementById("serviceUrl")
+          .value.trim()
+          .replace(/\/$/, "");
+        const stream = document.getElementById("inputStream").value;
+        const actionBtn = document.getElementById("triggerBtn");
+
+        if (!endpoint) {
+          logError("Target URL undefined.");
+          return;
+        }
+
+        const rawData = extractPayload(stream);
+        if (rawData.length === 0) {
+          logError("Input buffer empty.");
+          return;
+        }
+
+        actionBtn.disabled = true;
+        actionBtn.innerHTML = '<span class="loader-icon"></span>PROCESSING...';
+
+        try {
+          const response = await fetch(endpoint + "/bfhl", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ data: rawData }),
+          });
+          if (!response.ok) throw new Error(`Link Failure: ${response.status}`);
+          const resultJson = await response.json();
+          displayReport(resultJson);
+        } catch (err) {
+          logError(err.message || "Endpoint unreachable.");
+        } finally {
+          actionBtn.disabled = false;
+          actionBtn.textContent = "Run Analysis Engine";
+        }
+      }
+
+      function displayReport(report) {
+        const container = document.getElementById("output-container");
+        container.innerHTML = "";
+
+        const infoSection = document.createElement("div");
+        infoSection.className = "identity-grid";
+        [
+          ["USER_ID", report.user_id],
+          ["ENDPOINT_MAIL", report.email_id],
+          ["REG_NUM", report.college_roll_number],
+        ].forEach(([k, v]) => {
+          infoSection.innerHTML += `
+          <div class="identity-block">
+            <div class="key">${k}</div>
+            <div class="value">${v || "NULL"}</div>
+          </div>`;
+        });
+        container.appendChild(infoSection);
+
+        const metrics = report.summary || {};
+        const stats = document.createElement("div");
+        stats.className = "metric-row";
+        stats.innerHTML = `
+        <span class="metric-chip">${metrics.total_trees ?? 0} VALID TREES</span>
+        <span class="metric-chip">${metrics.total_cycles ?? 0} DETECTED CYCLES</span>
+        <span class="metric-chip">TOP ROOT: ${metrics.largest_tree_root || "NONE"}</span>`;
+        container.appendChild(stats);
+
+        const structureGrid = document.createElement("div");
+        structureGrid.className = "node-grid";
+
+        (report.hierarchies || []).forEach((item) => {
+          const block = document.createElement("div");
+          block.className = "node-card" + (item.has_cycle ? " warning" : "");
+
+          let contentMarkup = item.has_cycle
+            ? `<div style="color:var(--alert); font-size:.8rem;">[!] Circular Reference - Map Omitted</div>`
+            : `<div class="node-visual">${generateVisualMap(item.tree)}</div>`;
+
+          block.innerHTML = `
+          <div style="margin-bottom:12px;">
+            <div style="font-weight:600;">ROOT: ${item.root}</div>
+            <div style="font-size:.7rem; color:var(--text-dim);">${item.has_cycle ? "LOOP DETECTED" : "VERT_DEPTH: " + item.depth}</div>
+          </div>
+          ${contentMarkup}`;
+          structureGrid.appendChild(block);
+        });
+        container.appendChild(structureGrid);
+      }
+    </script>
+  </body>
+</html>
