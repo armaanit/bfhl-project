@@ -5,233 +5,178 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const AUTH_KEY = "armaanitsingh_20052005";
-const CONTACT_POINT = "as7007@srmist.edu.in";
-const STUDENT_ID = "RA2311030010264";
+const AUTH_TOKEN = "armaanitsingh_20052005";
+const CONTACT_EMAIL = "as7007@srmist.edu.in";
+const STUDENT_REF = "RA2311030010264";
 
-function verifyNodeFormat(rawInput) {
-  const cleanInput = rawInput.trim();
-  const nodeLinkSchema = /^([A-Z])->([A-Z])$/;
-  const structureMatch = cleanInput.match(nodeLinkSchema);
+app.get("/", (req, res) => {
+  res
+    .status(200)
+    .send("System status: ONLINE. Analysis engine ready at /bfhl.");
+});
 
-  if (!structureMatch) return null;
+app.get("/status", (req, res) => res.send("Active"));
 
-  const [, origin, destination] = structureMatch;
-  if (origin === destination) return null;
+function validateLink(input) {
+  const sanitized = input.trim();
+  const format = /^([A-Z])->([A-Z])$/;
+  const check = sanitized.match(format);
 
-  return { origin, destination };
+  if (!check) return null;
+
+  const [, head, tail] = check;
+  if (head === tail) return null;
+
+  return { head, tail };
 }
 
-function generateNestedMap(activeNode, flowMap) {
-  const sequence = flowMap[activeNode] || [];
-  const branchMap = {};
-  for (const step of sequence) {
-    branchMap[step] = generateNestedMap(step, flowMap);
+function mapBranches(origin, registry) {
+  const leafNodes = registry[origin] || [];
+  const struct = {};
+  for (const leaf of leafNodes) {
+    struct[leaf] = mapBranches(leaf, registry);
   }
-  return branchMap;
+  return struct;
 }
 
-function getHierarchyHeight(startPoint, flowMap) {
-  const offspring = flowMap[startPoint];
-  if (!offspring || offspring.length === 0) return 1;
-  return 1 + Math.max(...offspring.map((o) => getHierarchyHeight(o, flowMap)));
+function findMaxDepth(node, registry) {
+  const targets = registry[node];
+  if (!targets || targets.length === 0) return 1;
+  return 1 + Math.max(...targets.map((t) => findMaxDepth(t, registry)));
 }
 
-function verifyCircularFlow(current, flowMap, tracker, stack) {
-  tracker.add(current);
-  stack.add(current);
+function verifyFlow(node, registry, history, stack) {
+  history.add(node);
+  stack.add(node);
 
-  for (const link of flowMap[current] || []) {
-    if (!tracker.has(link)) {
-      if (verifyCircularFlow(link, flowMap, tracker, stack)) return true;
-    } else if (stack.has(link)) {
+  for (const nextNode of registry[node] || []) {
+    if (!history.has(nextNode)) {
+      if (verifyFlow(nextNode, registry, history, stack)) return true;
+    } else if (stack.has(nextNode)) {
       return true;
     }
   }
 
-  stack.delete(current);
+  stack.delete(node);
   return false;
 }
 
-function clusterNodes(seed, flowMap, backflowMap, tracker) {
-  const cluster = new Set();
-  const traversalQueue = [seed];
+function analyzeDataset(buffer) {
+  const invalidItems = [];
+  const repeatedEdges = [];
+  const uniqueKeys = new Set();
+  const childRegistry = new Set();
+  const parentLog = {};
+  const networkAdjacency = {};
+  const masterNodes = new Set();
 
-  while (traversalQueue.length) {
-    const focus = traversalQueue.shift();
-    if (cluster.has(focus)) continue;
-    cluster.add(focus);
+  buffer.forEach((item) => {
+    const raw = typeof item === "string" ? item.trim() : String(item).trim();
+    const edgeObj = validateLink(raw);
 
-    for (const downstream of flowMap[focus] || []) {
-      if (!cluster.has(downstream)) traversalQueue.push(downstream);
+    if (!edgeObj) {
+      invalidItems.push(item);
+      return;
     }
-    for (const upstream of backflowMap[focus] || []) {
-      if (!cluster.has(upstream)) traversalQueue.push(upstream);
+
+    const { head, tail } = edgeObj;
+    const pathKey = `${head}->${tail}`;
+
+    if (uniqueKeys.has(pathKey)) {
+      if (!repeatedEdges.includes(pathKey)) repeatedEdges.push(pathKey);
+      return;
     }
+    uniqueKeys.add(pathKey);
+
+    if (parentLog[tail] && parentLog[tail] !== head) return;
+    parentLog[tail] = head;
+
+    if (!networkAdjacency[head]) networkAdjacency[head] = [];
+    networkAdjacency[head].push(tail);
+
+    masterNodes.add(head);
+    masterNodes.add(tail);
+    childRegistry.add(tail);
+  });
+
+  if (masterNodes.size === 0) {
+    return {
+      user_id: AUTH_TOKEN,
+      email_id: CONTACT_EMAIL,
+      college_roll_number: STUDENT_REF,
+      hierarchies: [],
+      invalid_entries: invalidItems,
+      duplicate_edges: repeatedEdges,
+      summary: { total_trees: 0, total_cycles: 0, largest_tree_root: null },
+    };
   }
 
-  tracker.add(...cluster);
-  return cluster;
-}
+  const roots = [...masterNodes].filter((n) => !childRegistry.has(n)).sort();
+  const treesToMap = roots.length > 0 ? roots : [[...masterNodes].sort()[0]];
 
-function runAnalysisEngine(payload) {
-  const rejectedInputs = [];
-  const recurringLinks = [];
-  const uniqueLinks = new Set();
-  const targetNodes = new Set();
-  const sourceNodes = new Set();
-  const forwardRegistry = {};
-  const backwardRegistry = {};
+  const hierarchies = [];
+  let treeCount = 0;
+  let cycleCount = 0;
+  let peakDepth = 0;
+  let dominantRoot = "";
 
-  for (const item of payload) {
-    const sanitized =
-      typeof item === "string" ? item.trim() : String(item).trim();
-    const linkObj = verifyNodeFormat(sanitized);
-
-    if (!linkObj) {
-      rejectedInputs.push(sanitized.length ? sanitized : item);
-      continue;
-    }
-
-    const { origin, destination } = linkObj;
-    const pathKey = `${origin}->${destination}`;
-
-    if (uniqueLinks.has(pathKey)) {
-      if (!recurringLinks.includes(pathKey)) recurringLinks.push(pathKey);
-      continue;
-    }
-    uniqueLinks.add(pathKey);
-
-    if (
-      backwardRegistry[destination] &&
-      backwardRegistry[destination].length > 0
-    ) {
-      continue;
-    }
-
-    if (!forwardRegistry[origin]) forwardRegistry[origin] = [];
-    forwardRegistry[origin].push(destination);
-
-    if (!backwardRegistry[destination]) backwardRegistry[destination] = [];
-    backwardRegistry[destination].push(origin);
-
-    targetNodes.add(destination);
-    sourceNodes.add(origin);
-  }
-
-  const networkNodes = new Set([
-    ...Object.keys(forwardRegistry),
-    ...Object.keys(backwardRegistry),
-  ]);
-
-  const globalTracker = new Set();
-  const networkSegments = [];
-  const entryPoints = [...networkNodes]
-    .filter((n) => !targetNodes.has(n))
-    .sort();
-
-  for (const entry of entryPoints) {
-    if (globalTracker.has(entry)) continue;
-    const segment = clusterNodes(
-      entry,
-      forwardRegistry,
-      backwardRegistry,
-      globalTracker,
+  treesToMap.forEach((entryPoint) => {
+    const cycleStack = new Set();
+    const cycleHistory = new Set();
+    const isCyclic = verifyFlow(
+      entryPoint,
+      networkAdjacency,
+      cycleHistory,
+      cycleStack,
     );
-    networkSegments.push(segment);
-  }
 
-  for (const node of networkNodes) {
-    if (!globalTracker.has(node)) {
-      const segment = clusterNodes(
-        node,
-        forwardRegistry,
-        backwardRegistry,
-        globalTracker,
-      );
-      networkSegments.push(segment);
-    }
-  }
+    const resultNode = { root: entryPoint };
 
-  const processedHierarchies = [];
-  let linearTreeCount = 0;
-  let loopCount = 0;
-  let maxVerticality = -1;
-  let primaryRootLabel = null;
-
-  for (const segment of networkSegments) {
-    const memberNodes = [...segment].sort();
-    const segmentRoots = memberNodes.filter((n) => !targetNodes.has(n));
-    const anchor =
-      segmentRoots.length > 0 ? segmentRoots.sort()[0] : memberNodes[0];
-
-    const loopTracker = new Set();
-    const processStack = new Set();
-    let loopDetected = false;
-
-    for (const node of memberNodes) {
-      if (!loopTracker.has(node)) {
-        if (
-          verifyCircularFlow(node, forwardRegistry, loopTracker, processStack)
-        ) {
-          loopDetected = true;
-          break;
-        }
-      }
-    }
-
-    if (loopDetected) {
-      loopCount++;
-      processedHierarchies.push({ root: anchor, tree: {}, has_cycle: true });
+    if (isCyclic) {
+      resultNode.has_cycle = true;
+      resultNode.tree = {};
+      cycleCount++;
     } else {
-      linearTreeCount++;
-      const schematic = {};
-      schematic[anchor] = generateNestedMap(anchor, forwardRegistry);
-      const verticalHeight = getHierarchyHeight(anchor, forwardRegistry);
+      resultNode.tree = {
+        [entryPoint]: mapBranches(entryPoint, networkAdjacency),
+      };
+      const depthVal = findMaxDepth(entryPoint, networkAdjacency);
+      resultNode.depth = depthVal;
+      treeCount++;
 
-      processedHierarchies.push({
-        root: anchor,
-        tree: schematic,
-        depth: verticalHeight,
-      });
-
-      if (
-        verticalHeight > maxVerticality ||
-        (verticalHeight === maxVerticality && anchor < primaryRootLabel)
-      ) {
-        maxVerticality = verticalHeight;
-        primaryRootLabel = anchor;
+      if (depthVal > peakDepth) {
+        peakDepth = depthVal;
+        dominantRoot = entryPoint;
+      } else if (depthVal === peakDepth && peakDepth > 0) {
+        if (entryPoint < dominantRoot) dominantRoot = entryPoint;
       }
     }
-  }
+    hierarchies.push(resultNode);
+  });
 
   return {
-    user_id: AUTH_KEY,
-    email_id: CONTACT_POINT,
-    college_roll_number: STUDENT_ID,
-    hierarchies: processedHierarchies,
-    invalid_entries: rejectedInputs,
-    duplicate_edges: recurringLinks,
+    user_id: AUTH_TOKEN,
+    email_id: CONTACT_EMAIL,
+    college_roll_number: STUDENT_REF,
+    hierarchies,
+    invalid_entries: invalidItems,
+    duplicate_edges: repeatedEdges,
     summary: {
-      total_trees: linearTreeCount,
-      total_cycles: loopCount,
-      largest_tree_root: primaryRootLabel || "",
+      total_trees: treeCount,
+      total_cycles: cycleCount,
+      largest_tree_root: dominantRoot || null,
     },
   };
 }
 
 app.post("/bfhl", (req, res) => {
-  const { data: inboundData } = req.body;
-
-  if (!Array.isArray(inboundData)) {
-    return res.status(400).json({ error: "Invalid data format provided." });
-  }
-
-  const finalReport = runAnalysisEngine(inboundData);
-  res.json(finalReport);
+  const incomingData = req.body.data || [];
+  if (!Array.isArray(incomingData))
+    return res.status(400).json({ error: "Data array required" });
+  res.json(analyzeDataset(incomingData));
 });
 
-app.get("/", (req, res) => res.send("System Active. Endpoint: /bfhl"));
-
-const PORT_VAL = process.env.PORT || 3000;
-app.listen(PORT_VAL, () => console.log(`Active on ${PORT_VAL}`));
+const APP_LISTEN_PORT = process.env.PORT || 3000;
+app.listen(APP_LISTEN_PORT, () =>
+  console.log(`Gateway active on ${APP_LISTEN_PORT}`),
+);
