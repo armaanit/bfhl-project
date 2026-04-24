@@ -5,235 +5,233 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ── Personal credentials ─────────────────────────────────────────────────────
-const USER_ID = "yourname_ddmmyyyy"; // ← replace with your fullname_ddmmyyyy
-const EMAIL_ID = "you@college.edu"; // ← replace with your college email
-const ROLL_NO = "RA2211000000000"; // ← replace with your roll number
-// ─────────────────────────────────────────────────────────────────────────────
+const AUTH_KEY = "armaanitsingh_20052005";
+const CONTACT_POINT = "as7007@srmist.edu.in";
+const STUDENT_ID = "RA2311030010264";
 
-// Checks if an entry is a valid X->Y edge (single uppercase letters)
-function parseEdge(raw) {
-  const entry = raw.trim();
+function verifyNodeFormat(rawInput) {
+  const cleanInput = rawInput.trim();
+  const nodeLinkSchema = /^([A-Z])->([A-Z])$/;
+  const structureMatch = cleanInput.match(nodeLinkSchema);
 
-  // Must match exactly "A->B" — one uppercase letter, arrow, one uppercase letter
-  const pattern = /^([A-Z])->([A-Z])$/;
-  const match = entry.match(pattern);
-  if (!match) return null;
+  if (!structureMatch) return null;
 
-  const [, parent, child] = match;
-  if (parent === child) return null; // self-loops are invalid
+  const [, origin, destination] = structureMatch;
+  if (origin === destination) return null;
 
-  return { parent, child };
+  return { origin, destination };
 }
 
-// Recursively builds a nested tree object from an adjacency map
-function buildNestedTree(node, adjacency) {
-  const children = adjacency[node] || [];
-  const result = {};
-  for (const child of children) {
-    result[child] = buildNestedTree(child, adjacency);
+function generateNestedMap(activeNode, flowMap) {
+  const sequence = flowMap[activeNode] || [];
+  const branchMap = {};
+  for (const step of sequence) {
+    branchMap[step] = generateNestedMap(step, flowMap);
   }
-  return result;
+  return branchMap;
 }
 
-// Depth-first search to find the longest root-to-leaf path length
-function calcDepth(node, adjacency) {
-  const kids = adjacency[node];
-  if (!kids || kids.length === 0) return 1;
-  return 1 + Math.max(...kids.map((k) => calcDepth(k, adjacency)));
+function getHierarchyHeight(startPoint, flowMap) {
+  const offspring = flowMap[startPoint];
+  if (!offspring || offspring.length === 0) return 1;
+  return 1 + Math.max(...offspring.map((o) => getHierarchyHeight(o, flowMap)));
 }
 
-// Detects a cycle using DFS with a recursion stack
-function hasCycle(node, adjacency, visited, stack) {
-  visited.add(node);
-  stack.add(node);
+function verifyCircularFlow(current, flowMap, tracker, stack) {
+  tracker.add(current);
+  stack.add(current);
 
-  for (const neighbor of adjacency[node] || []) {
-    if (!visited.has(neighbor)) {
-      if (hasCycle(neighbor, adjacency, visited, stack)) return true;
-    } else if (stack.has(neighbor)) {
+  for (const link of flowMap[current] || []) {
+    if (!tracker.has(link)) {
+      if (verifyCircularFlow(link, flowMap, tracker, stack)) return true;
+    } else if (stack.has(link)) {
       return true;
     }
   }
 
-  stack.delete(node);
+  stack.delete(current);
   return false;
 }
 
-// Collects all nodes reachable from a starting node
-function collectGroup(node, adjacency, reverseAdj, visited) {
-  const group = new Set();
-  const queue = [node];
+function clusterNodes(seed, flowMap, backflowMap, tracker) {
+  const cluster = new Set();
+  const traversalQueue = [seed];
 
-  while (queue.length) {
-    const curr = queue.shift();
-    if (group.has(curr)) continue;
-    group.add(curr);
+  while (traversalQueue.length) {
+    const focus = traversalQueue.shift();
+    if (cluster.has(focus)) continue;
+    cluster.add(focus);
 
-    for (const child of adjacency[curr] || []) {
-      if (!group.has(child)) queue.push(child);
+    for (const downstream of flowMap[focus] || []) {
+      if (!cluster.has(downstream)) traversalQueue.push(downstream);
     }
-    for (const parent of reverseAdj[curr] || []) {
-      if (!group.has(parent)) queue.push(parent);
+    for (const upstream of backflowMap[focus] || []) {
+      if (!cluster.has(upstream)) traversalQueue.push(upstream);
     }
   }
 
-  visited.add(...group);
-  return group;
+  tracker.add(...cluster);
+  return cluster;
 }
 
-function processData(dataArray) {
-  const invalidEntries = [];
-  const duplicateEdges = [];
-  const seenEdges = new Set();
-  const childSet = new Set(); // nodes that appear as a child at least once
-  const parentSet = new Set();
-  const adjacency = {}; // parent -> [children]
-  const reverseAdj = {}; // child  -> [parents]
+function runAnalysisEngine(payload) {
+  const rejectedInputs = [];
+  const recurringLinks = [];
+  const uniqueLinks = new Set();
+  const targetNodes = new Set();
+  const sourceNodes = new Set();
+  const forwardRegistry = {};
+  const backwardRegistry = {};
 
-  for (const raw of dataArray) {
-    const trimmed = typeof raw === "string" ? raw.trim() : String(raw).trim();
-    const edge = parseEdge(trimmed);
+  for (const item of payload) {
+    const sanitized =
+      typeof item === "string" ? item.trim() : String(item).trim();
+    const linkObj = verifyNodeFormat(sanitized);
 
-    if (!edge) {
-      invalidEntries.push(trimmed.length ? trimmed : raw);
+    if (!linkObj) {
+      rejectedInputs.push(sanitized.length ? sanitized : item);
       continue;
     }
 
-    const { parent, child } = edge;
-    const key = `${parent}->${child}`;
+    const { origin, destination } = linkObj;
+    const pathKey = `${origin}->${destination}`;
 
-    // Duplicate check
-    if (seenEdges.has(key)) {
-      if (!duplicateEdges.includes(key)) duplicateEdges.push(key);
+    if (uniqueLinks.has(pathKey)) {
+      if (!recurringLinks.includes(pathKey)) recurringLinks.push(pathKey);
       continue;
     }
-    seenEdges.add(key);
+    uniqueLinks.add(pathKey);
 
-    // Multi-parent: if child already has a parent, silently discard this edge
-    if (reverseAdj[child] && reverseAdj[child].length > 0) {
+    if (
+      backwardRegistry[destination] &&
+      backwardRegistry[destination].length > 0
+    ) {
       continue;
     }
 
-    // Register the edge
-    if (!adjacency[parent]) adjacency[parent] = [];
-    adjacency[parent].push(child);
+    if (!forwardRegistry[origin]) forwardRegistry[origin] = [];
+    forwardRegistry[origin].push(destination);
 
-    if (!reverseAdj[child]) reverseAdj[child] = [];
-    reverseAdj[child].push(parent);
+    if (!backwardRegistry[destination]) backwardRegistry[destination] = [];
+    backwardRegistry[destination].push(origin);
 
-    childSet.add(child);
-    parentSet.add(parent);
+    targetNodes.add(destination);
+    sourceNodes.add(origin);
   }
 
-  // All nodes ever mentioned
-  const allNodes = new Set([
-    ...Object.keys(adjacency),
-    ...Object.keys(reverseAdj),
+  const networkNodes = new Set([
+    ...Object.keys(forwardRegistry),
+    ...Object.keys(backwardRegistry),
   ]);
 
-  // Group nodes into connected components
-  const visited = new Set();
-  const components = [];
+  const globalTracker = new Set();
+  const networkSegments = [];
+  const entryPoints = [...networkNodes]
+    .filter((n) => !targetNodes.has(n))
+    .sort();
 
-  // Start from nodes that are clearly roots (never a child), then sweep rest
-  const potentialRoots = [...allNodes].filter((n) => !childSet.has(n)).sort();
-
-  for (const root of potentialRoots) {
-    if (visited.has(root)) continue;
-    const group = collectGroup(root, adjacency, reverseAdj, visited);
-    components.push(group);
+  for (const entry of entryPoints) {
+    if (globalTracker.has(entry)) continue;
+    const segment = clusterNodes(
+      entry,
+      forwardRegistry,
+      backwardRegistry,
+      globalTracker,
+    );
+    networkSegments.push(segment);
   }
 
-  // Catch any remaining nodes (e.g. pure cycles)
-  for (const node of allNodes) {
-    if (!visited.has(node)) {
-      const group = collectGroup(node, adjacency, reverseAdj, visited);
-      components.push(group);
+  for (const node of networkNodes) {
+    if (!globalTracker.has(node)) {
+      const segment = clusterNodes(
+        node,
+        forwardRegistry,
+        backwardRegistry,
+        globalTracker,
+      );
+      networkSegments.push(segment);
     }
   }
 
-  const hierarchies = [];
-  let totalTrees = 0;
-  let totalCycles = 0;
-  let largestDepth = -1;
-  let largestRoot = null;
+  const processedHierarchies = [];
+  let linearTreeCount = 0;
+  let loopCount = 0;
+  let maxVerticality = -1;
+  let primaryRootLabel = null;
 
-  for (const group of components) {
-    const nodes = [...group].sort();
+  for (const segment of networkSegments) {
+    const memberNodes = [...segment].sort();
+    const segmentRoots = memberNodes.filter((n) => !targetNodes.has(n));
+    const anchor =
+      segmentRoots.length > 0 ? segmentRoots.sort()[0] : memberNodes[0];
 
-    // Determine the root(s) of this component
-    const groupRoots = nodes.filter((n) => !childSet.has(n));
+    const loopTracker = new Set();
+    const processStack = new Set();
+    let loopDetected = false;
 
-    // There should normally be one root per component; if none, it's a pure cycle
-    const root = groupRoots.length > 0 ? groupRoots.sort()[0] : nodes[0]; // lexicographically smallest for pure cycles
-
-    // Cycle detection across the whole group
-    const cycleVisited = new Set();
-    const cycleStack = new Set();
-    let foundCycle = false;
-
-    for (const n of nodes) {
-      if (!cycleVisited.has(n)) {
-        if (hasCycle(n, adjacency, cycleVisited, cycleStack)) {
-          foundCycle = true;
+    for (const node of memberNodes) {
+      if (!loopTracker.has(node)) {
+        if (
+          verifyCircularFlow(node, forwardRegistry, loopTracker, processStack)
+        ) {
+          loopDetected = true;
           break;
         }
       }
     }
 
-    if (foundCycle) {
-      totalCycles++;
-      hierarchies.push({ root, tree: {}, has_cycle: true });
+    if (loopDetected) {
+      loopCount++;
+      processedHierarchies.push({ root: anchor, tree: {}, has_cycle: true });
     } else {
-      totalTrees++;
-      const nested = {};
-      nested[root] = buildNestedTree(root, adjacency);
-      const depth = calcDepth(root, adjacency);
+      linearTreeCount++;
+      const schematic = {};
+      schematic[anchor] = generateNestedMap(anchor, forwardRegistry);
+      const verticalHeight = getHierarchyHeight(anchor, forwardRegistry);
 
-      hierarchies.push({ root, tree: nested, depth });
+      processedHierarchies.push({
+        root: anchor,
+        tree: schematic,
+        depth: verticalHeight,
+      });
 
-      // Track largest tree (tiebreak: lexicographically smaller root wins)
       if (
-        depth > largestDepth ||
-        (depth === largestDepth && root < largestRoot)
+        verticalHeight > maxVerticality ||
+        (verticalHeight === maxVerticality && anchor < primaryRootLabel)
       ) {
-        largestDepth = depth;
-        largestRoot = root;
+        maxVerticality = verticalHeight;
+        primaryRootLabel = anchor;
       }
     }
   }
 
   return {
-    user_id: USER_ID,
-    email_id: EMAIL_ID,
-    college_roll_number: ROLL_NO,
-    hierarchies,
-    invalid_entries: invalidEntries,
-    duplicate_edges: duplicateEdges,
+    user_id: AUTH_KEY,
+    email_id: CONTACT_POINT,
+    college_roll_number: STUDENT_ID,
+    hierarchies: processedHierarchies,
+    invalid_entries: rejectedInputs,
+    duplicate_edges: recurringLinks,
     summary: {
-      total_trees: totalTrees,
-      total_cycles: totalCycles,
-      largest_tree_root: largestRoot || "",
+      total_trees: linearTreeCount,
+      total_cycles: loopCount,
+      largest_tree_root: primaryRootLabel || "",
     },
   };
 }
 
 app.post("/bfhl", (req, res) => {
-  const { data } = req.body;
+  const { data: inboundData } = req.body;
 
-  if (!Array.isArray(data)) {
-    return res
-      .status(400)
-      .json({ error: "Request body must contain a 'data' array." });
+  if (!Array.isArray(inboundData)) {
+    return res.status(400).json({ error: "Invalid data format provided." });
   }
 
-  const result = processData(data);
-  res.json(result);
+  const finalReport = runAnalysisEngine(inboundData);
+  res.json(finalReport);
 });
 
-// Health check
-app.get("/", (req, res) => res.send("BFHL API is running. POST to /bfhl"));
+app.get("/", (req, res) => res.send("System Active. Endpoint: /bfhl"));
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+const PORT_VAL = process.env.PORT || 3000;
+app.listen(PORT_VAL, () => console.log(`Active on ${PORT_VAL}`));
